@@ -1,7 +1,7 @@
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict
 import json
-from datetime import datetime
+from datetime import datetime,timezone
 from app.services import (
     create_message,
     update_message_status,
@@ -202,7 +202,7 @@ async def handle_message(data, sender_id):
             "replied_to": reply_to_message_id,
             "time": now.strftime("%I:%M %p"),
             "day": now.isoweekday(),
-            "date": now.strftime("%Y-%m-%d"),
+            "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "b_deleted": False,
             "status": 1,
             "image_name": "image_001.jpg" if msg_type == "file" else None,
