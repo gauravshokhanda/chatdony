@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Real-Time Chat</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", sans-serif;
+        display: flex;
+        justify-content: center;
+        background-color: #f3f4f6;
+        padding: 30px;
+        margin: 0;
+      }
+      .chat-box {
+        width: 420px;
+        background-color: #fff;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        padding: 16px;
+      }
+      h2 {
+        margin-top: 0;
+        font-size: 22px;
+        color: #4f46e5;
+      }
+      label {
+        font-weight: 600;
+        display: inline-block;
+        margin: 6px 0;
+      }
+      input[type="text"] {
+        width: 70%;
+        padding: 6px 8px;
+        margin-top: 4px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      button {
+        padding: 6px 12px;
+        border: none;
+        background-color: #4f46e5;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      button:hover {
+        background-color: #4338ca;
+      }
+      .chat-partners {
+        margin-top: 10px;
+        max-height: 100px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        padding: 8px;
+        border-radius: 4px;
+        background-color: #f9fafb;
+      }
+      .chat-partners div {
+        cursor: pointer;
+        color: #1d4ed8;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+      .chat-partners div:hover {
+        text-decoration: underline;
+      }
+      .messages {
+        border: 1px solid #e5e7eb;
+        height: 200px;
+        overflow-y: auto;
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 6px;
+        background-color: #f9fafb;
+      }
+      .message {
+        margin-bottom: 8px;
+        line-height: 1.4;
+      }
+      .message strong {
+        display: inline-block;
+        width: 50px;
+        color: #4b5563;
+      }
+      .message.you strong {
+        color: #10b981;
+      }
+      #chatWith {
+        margin-top: 10px;
+        font-size: 16px;
+        color: #374151;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chat-box">
+      <h2>Chat App</h2>
+
+      <label>User ID: <input id="userIdInput" type="text" /></label>
+      <button onclick="connectSocket()">Connect</button>
+
+      <br /><br />
+      <div><strong>Chat Partners:</strong></div>
+      <div class="chat-partners" id="partnersList"></div>
+
+      <hr />
+      <div>
+        <label>Start New Chat with User ID:</label>
+        <input type="text" id="newChatUserId" />
+        <button onclick="startNewChat()">Start Chat</button>
+      </div>
+
+      <hr />
+      <div><strong id="chatWith"></strong></div>
+      <div id="typing-status" style="font-style: italic; color: gray"></div>
+
+      <div class="messages" id="chatMessages"></div>
+
+      <input
+        type="text"
+        id="messageInput"
+        placeholder="Type a message"
+        style="width: 78%"
+      />
+      <input type="file" id="fileInput" />
+      <button onclick="sendFile()">📎 Send File</button>
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+      let socket;
+      let userId;
+      let selectedPartnerId = null;
+
+      function connectSocket() {
+        userId = document.getElementById("userIdInput").value;
+        if (!userId) return alert("Enter your user ID first");
+
+        socket = new WebSocket(`ws://localhost:8000/ws/${userId}`);
+
+        socket.onopen = () => {
+          console.log("✅ Connected");
+          fetchPartners();
+        };
+
+        socket.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          const msgBox = document.getElementById("chatMessages");
+
+          if (data.type === "typing") {
+            document.getElementById("typing-status").innerText =
+              data.from === selectedPartnerId && data.is_typing
+                ? `User ${data.from} is typing...`
+                : "";
+            return;
+          }
+
+          if (
+            (data.from == userId && data.to == selectedPartnerId) ||
+            (data.to == userId && data.from == selectedPartnerId)
+          ) {
+            const side = data.from == userId ? "You" : `User ${data.from}`;
+            const sideClass = data.from == userId ? "you" : "them";
+            const div = document.createElement("div");
+            div.className = `message ${sideClass}`;
+            div.innerHTML = `<strong>${side}:</strong> ${data.message}`;
+            msgBox.appendChild(div);
+            msgBox.scrollTop = msgBox.scrollHeight;
+          }
+        };
+
+        socket.onerror = (err) => console.error("❌ WebSocket Error:", err);
+        socket.onclose = () => console.warn("⚠️ WebSocket Closed");
+      }
+
+      function fetchPartners() {
+        fetch(`http://localhost:8000/conversation/byuuid/${userId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            const list = document.getElementById("partnersList");
+            list.innerHTML = "";
+            data.forEach((partner) => {
+              const div = document.createElement("div");
+              div.textContent = `${partner.username} (id: ${partner.user_id})`;
+              div.onclick = () => loadChat(partner.user_id);
+              list.appendChild(div);
+            });
+          });
+      }
+
+      function loadChat(partnerId) {
+        selectedPartnerId = partnerId;
+        document.getElementById(
+          "chatWith"
+        ).innerText = `Chat with ${partnerId}`;
+        const msgBox = document.getElementById("chatMessages");
+        msgBox.innerHTML = "";
+
+        fetch(`http://localhost:8000/conversation/${userId}/${partnerId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            data.forEach((msg) => {
+              const side =
+                msg.sender_id == userId ? "You" : `User ${msg.sender_id}`;
+              const sideClass = msg.sender_id == userId ? "you" : "them";
+              const div = document.createElement("div");
+              div.className = `message ${sideClass}`;
+
+              if (msg.message_type === "file" && msg.file_url) {
+                const fileName = msg.file_url.split("/").pop();
+                div.innerHTML = `<strong>${side}:</strong> <a href="${msg.file_url}" target="_blank">📎 ${fileName}</a>`;
+              } else {
+                div.innerHTML = `<strong>${side}:</strong> ${msg.message}`;
+              }
+
+              msgBox.appendChild(div);
+            });
+            msgBox.scrollTop = msgBox.scrollHeight;
+          });
+      }
+
+      function sendMessage() {
+        const input = document.getElementById("messageInput");
+        const text = input.value.trim();
+        if (!text || !selectedPartnerId) return;
+
+        const payload = {
+          type: "message",
+          to: parseInt(selectedPartnerId),
+          message: text,
+        };
+
+        socket.send(JSON.stringify(payload));
+
+        const msgBox = document.getElementById("chatMessages");
+        const div = document.createElement("div");
+        div.className = "message you";
+        div.innerHTML = `<strong>You:</strong> ${text}`;
+        msgBox.appendChild(div);
+        msgBox.scrollTop = msgBox.scrollHeight;
+        input.value = "";
+      }
+
+      function sendFile() {
+        const file = document.getElementById("fileInput").files[0];
+        if (!file || !selectedPartnerId) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        fetch("http://localhost:8000/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            const payload = {
+              type: "file",
+              to: parseInt(selectedPartnerId),
+              file_url: data.file_url,
+              file_type: data.file_type,
+              message: "📎 File",
+            };
+            socket.send(JSON.stringify(payload));
+          })
+          .catch((err) => alert("Upload failed: " + err.message));
+      }
+
+      function startNewChat() {
+        const newId = document.getElementById("newChatUserId").value;
+        if (newId) loadChat(newId);
+      }
+
+      document.getElementById("messageInput").addEventListener("input", () => {
+        if (
+          !selectedPartnerId ||
+          !socket ||
+          socket.readyState !== WebSocket.OPEN
+        )
+          return;
+        socket.send(
+          JSON.stringify({
+            type: "typing",
+            to: parseInt(selectedPartnerId),
+            is_typing: true,
+          })
+        );
+        setTimeout(() => {
+          socket.send(
+            JSON.stringify({
+              type: "typing",
+              to: parseInt(selectedPartnerId),
+              is_typing: false,
+            })
+          );
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>

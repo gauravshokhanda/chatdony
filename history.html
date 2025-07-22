@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chat History by UUID</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 40px;
+        background-color: #f0f4f8;
+      }
+      .container {
+        max-width: 700px;
+        margin: auto;
+        background: white;
+        border-radius: 10px;
+        padding: 30px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+      h2 {
+        color: #1b88d7;
+        margin-bottom: 20px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input {
+        padding: 10px;
+        width: 70%;
+        margin-right: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+      }
+      button {
+        padding: 10px 16px;
+        background: #1b88d7;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .chat-box {
+        margin-top: 30px;
+        border-top: 1px solid #ddd;
+        padding-top: 20px;
+      }
+      .partner-header {
+        background-color: #eff6ff;
+        padding: 10px 15px;
+        font-weight: bold;
+        border-left: 4px solid #1b88d7;
+        margin-bottom: 10px;
+        border-radius: 5px;
+      }
+      .message {
+        padding: 8px 12px;
+        margin: 6px 0;
+        border-radius: 8px;
+        max-width: 80%;
+        word-wrap: break-word;
+      }
+      .you {
+        background-color: #d1fae5;
+        align-self: flex-end;
+      }
+      .other {
+        background-color: #fef3c7;
+      }
+      .chat-thread {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 20px;
+      }
+      .timestamp {
+        font-size: 12px;
+        color: gray;
+        margin-top: 4px;
+      }
+      a {
+        color: #2563eb;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>📜 Chat History by UUID</h2>
+      <label>Enter User UUID:</label>
+      <input type="text" id="uuidInput" />
+      <button onclick="loadHistory()">Load History</button>
+
+      <div id="history" class="chat-box"></div>
+    </div>
+
+    <script>
+      async function loadHistory() {
+        const uuid = document.getElementById("uuidInput").value.trim();
+        if (!uuid) return alert("Please enter a UUID");
+
+        const container = document.getElementById("history");
+        container.innerHTML = "<p>Loading chat history...</p>";
+
+        try {
+          const res = await fetch(`http://localhost:8000/history/${uuid}`);
+          const messages = await res.json();
+
+          if (!messages.length) {
+            container.innerHTML = "<p>No chat history found for this UUID.</p>";
+            return;
+          }
+
+          // Group messages by conversation partner
+          const grouped = {};
+          messages.forEach((msg) => {
+            const partner =
+              msg.sender_id == uuid ? msg.receiver_id : msg.sender_id;
+            if (!grouped[partner]) grouped[partner] = [];
+            grouped[partner].push(msg);
+          });
+
+          container.innerHTML = "";
+
+          for (const partnerId in grouped) {
+            const chatThread = document.createElement("div");
+            chatThread.className = "chat-thread";
+
+            const header = document.createElement("div");
+            header.className = "partner-header";
+            header.textContent = `Chat with ${partnerId}`;
+            chatThread.appendChild(header);
+
+            grouped[partnerId].forEach((msg) => {
+              const bubble = document.createElement("div");
+              bubble.className =
+                msg.sender_id == uuid ? "message you" : "message other";
+
+              const content =
+                msg.message_type === "file"
+                  ? `<a href="${msg.file_url}" target="_blank">📎 File</a>`
+                  : msg.message;
+
+              bubble.innerHTML = `<div><strong>${
+                msg.sender_id == uuid ? "You" : `User ${msg.sender_id}`
+              }:</strong> ${content}</div><div class="timestamp">${new Date(
+                msg.timestamp
+              ).toLocaleString()}</div>`;
+
+              chatThread.appendChild(bubble);
+            });
+
+            container.appendChild(chatThread);
+          }
+        } catch (err) {
+          container.innerHTML = "<p>Error loading history.</p>";
+          console.error(err);
+        }
+      }
+    </script>
+  </body>
+</html>

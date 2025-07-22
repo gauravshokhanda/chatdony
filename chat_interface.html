@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Real-time User Status Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f6fa;
+      padding: 30px;
+      color: #333;
+    }
+    h1 {
+      color: #2d3436;
+    }
+    .status-box {
+      margin-top: 20px;
+      padding: 15px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .online {
+      color: green;
+      font-weight: bold;
+    }
+    .offline {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 WebSocket User Status Test</h1>
+  <p>Enter your <strong>User ID</strong>:</p>
+  <input type="text" id="userIdInput" placeholder="e.g., 1" />
+  <button onclick="connectWebSocket()">Connect</button>
+
+  <div class="status-box" id="statusBox">
+    <p>🔌 Status: <span id="connectionStatus">Not Connected</span></p>
+    <p>👥 User Online/Offline Updates:</p>
+    <ul id="userUpdates"></ul>
+  </div>
+
+  <script>
+    let socket;
+
+    function connectWebSocket() {
+      const userId = document.getElementById("userIdInput").value.trim();
+      if (!userId) {
+        alert("Please enter a valid User ID");
+        return;
+      }
+
+      socket = new WebSocket(`ws://localhost:8000/ws/${userId}`);
+
+      socket.onopen = () => {
+        document.getElementById("connectionStatus").textContent = "Connected ✅";
+        document.getElementById("connectionStatus").style.color = "green";
+      };
+
+      socket.onclose = () => {
+        document.getElementById("connectionStatus").textContent = "Disconnected ❌";
+        document.getElementById("connectionStatus").style.color = "red";
+      };
+
+      socket.onerror = (error) => {
+        console.error("WebSocket Error:", error);
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "user_status") {
+          const update = document.createElement("li");
+          update.innerHTML = `User <strong>${data.user_id}</strong> is <span class="${data.is_online ? 'online' : 'offline'}">${data.is_online ? 'Online' : 'Offline'}</span>`;
+          document.getElementById("userUpdates").prepend(update);
+        }
+      };
+    }
+  </script>
+</body>
+</html>

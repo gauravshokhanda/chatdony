@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chat Inbox by UUID</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI", sans-serif;
+        background-color: #f9fafb;
+        display: flex;
+        height: 100vh;
+      }
+      .sidebar {
+        width: 280px;
+        background-color: #fff;
+        border-right: 1px solid #e5e7eb;
+        padding: 10px;
+        overflow-y: auto;
+      }
+      .chat-header {
+        font-weight: bold;
+        font-size: 16px;
+        margin-bottom: 10px;
+      }
+      .partner {
+        padding: 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        margin-bottom: 5px;
+        background-color: #f3f4f6;
+        transition: background-color 0.2s;
+      }
+      .partner:hover {
+        background-color: #e5e7eb;
+      }
+      .partner.active {
+        background-color: #dbeafe;
+      }
+      .chat-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+      }
+      .input-box {
+        margin: 10px;
+      }
+      .input-box input {
+        padding: 6px 10px;
+        font-size: 14px;
+        width: 70%;
+        margin-right: 5px;
+      }
+      .input-box button {
+        padding: 6px 12px;
+        background-color: #2563eb;
+        border: none;
+        color: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .messages {
+        flex: 1;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        padding: 10px;
+        overflow-y: auto;
+        background-color: #fff;
+      }
+      .message {
+        margin-bottom: 10px;
+      }
+      .message .from {
+        font-weight: bold;
+      }
+      .chat-with {
+        margin-bottom: 10px;
+        font-size: 16px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="input-box">
+        <input type="text" id="uuidInput" placeholder="Enter UUID" />
+        <button onclick="loadPartners()">Load</button>
+      </div>
+      <div class="chat-header">Chats</div>
+      <div id="partnersList"></div>
+    </div>
+    <div class="chat-content">
+      <div id="chatWith" class="chat-with"></div>
+      <div class="messages" id="chatMessages"></div>
+    </div>
+
+    <script>
+      let currentUUID = "";
+
+      function loadPartners() {
+        currentUUID = document.getElementById("uuidInput").value.trim();
+        if (!currentUUID) return alert("Enter a UUID");
+
+        fetch(`http://localhost:8000/conversation/byuuid/${currentUUID}`)
+          .then((res) => res.json())
+          .then((res) => {
+            const list = document.getElementById("partnersList");
+            list.innerHTML = "";
+            if (!res.data || res.data.length === 0) {
+              list.innerHTML = "<p>No chats found.</p>";
+              return;
+            }
+
+            res.data.forEach((partner, index) => {
+              const el = document.createElement("div");
+              el.className = "partner";
+              el.textContent = `${
+                partner.name || partner.email || partner.uniqueUDID
+              }`;
+              el.onclick = () => {
+                document
+                  .querySelectorAll(".partner")
+                  .forEach((p) => p.classList.remove("active"));
+                el.classList.add("active");
+                loadConversation(currentUUID, partner.uniqueUDID);
+                document.getElementById("chatWith").innerText = `Chat with ${
+                  partner.name || partner.email || partner.uniqueUDID
+                }`;
+              };
+              list.appendChild(el);
+            });
+          });
+      }
+
+      function loadConversation(user1, user2) {
+        fetch(`http://localhost:8000/conversation/${user1}/${user2}`)
+          .then((res) => res.json())
+          .then((data) => {
+            const box = document.getElementById("chatMessages");
+            box.innerHTML = "";
+            if (!data.success || !data.messages) {
+              box.innerHTML = "<p>No messages found.</p>";
+              return;
+            }
+
+            data.messages.forEach((msg) => {
+              const div = document.createElement("div");
+              div.className = "message";
+              div.innerHTML = `
+          <div class="from">
+            ${msg.from.uuid === user1 ? "You" : msg.from.name || "User"}:
+            <span style="font-size: 0.8em; color: gray;">${msg.date} ${
+                msg.time
+              }</span>
+          </div>
+          <div>${msg.body}</div>
+        `;
+              box.appendChild(div);
+            });
+
+            box.scrollTop = box.scrollHeight;
+          });
+      }
+    </script>
+  </body>
+</html>

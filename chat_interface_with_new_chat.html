@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+    }
+    .chat-box {
+      width: 420px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    h2 { color: #4f46e5; margin-top: 0; }
+    input, button {
+      padding: 6px 8px;
+      margin: 4px 0;
+      border-radius: 5px;
+    }
+    input[type="text"] {
+      width: 68%;
+      border: 1px solid #ccc;
+    }
+    button {
+      border: none;
+      background: #4f46e5;
+      color: white;
+      cursor: pointer;
+    }
+    .messages {
+      height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin: 10px 0;
+      background: #f9fafb;
+    }
+    .message { margin-bottom: 8px; }
+    .you strong { color: #10b981; }
+    .them strong { color: #4b5563; }
+    .tick { margin-left: 5px; font-size: 12px; }
+    .reply-block {
+      padding: 6px 10px;
+      background: #e0e7ff;
+      border-left: 4px solid #6366f1;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-box">
+    <h2>Chat App</h2>
+    <label>Your ID:</label>
+    <input id="userId" type="text" />
+    <button onclick="connect()">Connect</button>
+    <br/>
+    <label>Partner ID:</label>
+    <input id="partnerId" type="text" />
+    <button onclick="loadChat()">Load Chat</button>
+    
+    <div class="messages" id="messages"></div>
+
+    <div id="replyPreview" style="display:none" class="reply-block">
+      <strong>Replying to:</strong> <span id="replyText"></span>
+      <button onclick="cancelReply()" style="float:right;">✕</button>
+    </div>
+
+    <input id="messageInput" type="text" placeholder="Type message..." />
+    <input type="file" id="fileInput" />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    let socket;
+    let userId;
+    let partnerId;
+    let replyTo = null;
+
+    function connect() {
+      userId = document.getElementById("userId").value;
+      if (!userId) return alert("Enter your ID");
+
+      socket = new WebSocket(`ws://localhost:8000/ws/${userId}`);
+
+      socket.onopen = () => console.log("✅ Connected");
+      socket.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        console.log("📥", data);
+
+        if (data.type === "message") {
+          const from = data.from == userId ? "You" : `User ${data.from}`;
+          const side = data.from == userId ? "you" : "them";
+          const msgDiv = document.createElement("div");
+          msgDiv.className = `message ${side}`;
+          msgDiv.innerHTML = `<strong>${from}:</strong> ${data.message}`;
+
+          if (data.reply_to_message_text) {
+            msgDiv.innerHTML = `
+              <div class="reply-block">
+                <strong>${data.reply_to_user_name}:</strong> ${data.reply_to_message_text}
+              </div>` + msgDiv.innerHTML;
+          }
+
+          const tick = document.createElement("span");
+          tick.className = "tick";
+          tick.id = `tick-${data.message_id}`;
+          tick.textContent = data.status === "seen" ? "✓✓" : data.status === "delivered" ? "✓✓" : "✓";
+          tick.style.color = data.status === "seen" ? "blue" : "gray";
+          msgDiv.appendChild(tick);
+
+          document.getElementById("messages").appendChild(msgDiv);
+          scrollToBottom();
+
+          if (data.from != userId) {
+            sendSeen(data.message_id);
+          }
+        }
+
+        if (data.type === "status_update") {
+          const tick = document.getElementById(`tick-${data.message_id}`);
+          if (tick) {
+            tick.textContent = data.status === "seen" ? "✓✓" : data.status === "delivered" ? "✓✓" : "✓";
+            tick.style.color = data.status === "seen" ? "blue" : "gray";
+          }
+        }
+      };
+    }
+
+    function loadChat() {
+      partnerId = document.getElementById("partnerId").value;
+      if (!partnerId) return;
+
+      fetch(`http://localhost:8000/conversation/${userId}/${partnerId}`)
+        .then((res) => res.json())
+        .then((msgs) => {
+          const box = document.getElementById("messages");
+          box.innerHTML = "";
+
+          let lastMsgIdFromThem = null;
+          msgs.forEach((msg) => {
+            const from = msg.sender_id == userId ? "You" : `User ${msg.sender_id}`;
+            const side = msg.sender_id == userId ? "you" : "them";
+            const div = document.createElement("div");
+            div.className = `message ${side}`;
+            div.innerHTML = `<strong>${from}:</strong> ${msg.message}`;
+
+            if (msg.reply_to_message_text) {
+              div.innerHTML = `
+                <div class="reply-block">
+                  <strong>${msg.reply_to_user_name}:</strong> ${msg.reply_to_message_text}
+                </div>` + div.innerHTML;
+            }
+
+            const tick = document.createElement("span");
+            tick.className = "tick";
+            tick.id = `tick-${msg.message_id}`;
+            tick.textContent = msg.status === "seen" ? "✓✓" : msg.status === "delivered" ? "✓✓" : "✓";
+            tick.style.color = msg.status === "seen" ? "blue" : "gray";
+            div.appendChild(tick);
+
+            box.appendChild(div);
+
+            if (msg.sender_id != userId) {
+              lastMsgIdFromThem = msg.message_id;
+            }
+          });
+
+          scrollToBottom();
+
+          if (lastMsgIdFromThem) {
+            sendSeen(lastMsgIdFromThem);
+          }
+        });
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("messageInput");
+      const text = input.value.trim();
+      if (!text || !partnerId) return;
+
+      const payload = {
+        type: "message",
+        to: parseInt(partnerId),
+        message: text,
+        reply_to_message_id: replyTo,
+      };
+
+      socket.send(JSON.stringify(payload));
+      input.value = "";
+      cancelReply();
+    }
+
+    function sendSeen(messageId) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ type: "seen", message_id: messageId, from: userId }));
+    }
+
+    function scrollToBottom() {
+      const box = document.getElementById("messages");
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function cancelReply() {
+      replyTo = null;
+      document.getElementById("replyPreview").style.display = "none";
+    }
+
+    function setReply(id, text) {
+      replyTo = id;
+      document.getElementById("replyText").textContent = text;
+      document.getElementById("replyPreview").style.display = "block";
+    }
+  </script>
+</body>
+</html>

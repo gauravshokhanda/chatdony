@@ -1,0 +1,74 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat Test Client</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+    #chatBox { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background: #fff; }
+    .message { margin-bottom: 10px; }
+    .sent { color: green; }
+    .received { color: blue; }
+    .meta { font-size: 0.8em; color: #999; }
+  </style>
+</head>
+<body>
+  <h2>Chat WebSocket Test</h2>
+  <label>User UUID: <input id="userId" placeholder="Enter your UUID"></label>
+  <button onclick="connectWS()">Connect</button>
+  <div id="status"></div>
+
+  <div id="chatBox"></div>
+  <input id="messageInput" placeholder="Type your message" />
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    let socket;
+    let myId = "";
+
+    function connectWS() {
+      myId = document.getElementById("userId").value.trim();
+      socket = new WebSocket("ws://localhost:8000/ws/" + myId);
+
+      socket.onopen = () => {
+        document.getElementById("status").innerText = "✅ Connected";
+      };
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        console.log("Received:", msg);
+        const chatBox = document.getElementById("chatBox");
+
+        if (msg.type === "status_update") {
+          chatBox.innerHTML += `<div class="meta">✔ Message ${msg.message_id} is ${msg.status}</div>`;
+        } else if (msg.type === "typing") {
+          chatBox.innerHTML += `<div class="meta">${msg.from} is typing...</div>`;
+        } else {
+          const from = msg.sender_id || msg.from;
+          const text = msg.message || msg.body;
+          const cls = from === myId ? 'sent' : 'received';
+          chatBox.innerHTML += `<div class="message ${cls}"><strong>${from}:</strong> ${text}</div>`;
+        }
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+      };
+
+      socket.onclose = () => {
+        document.getElementById("status").innerText = "❌ Disconnected";
+      };
+    }
+
+    function sendMessage() {
+      const content = document.getElementById("messageInput").value;
+      const msg = {
+        type: "message",
+        to: "paste_receiver_uuid_here",  // Replace this
+        message: content
+      };
+      socket.send(JSON.stringify(msg));
+      document.getElementById("messageInput").value = "";
+    }
+  </script>
+</body>
+</html>

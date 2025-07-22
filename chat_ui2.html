@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Real-Time Chat UI</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
+        display: flex;
+        height: 100vh;
+      }
+      .sidebar {
+        width: 300px;
+        background: #fff;
+        border-right: 1px solid #ddd;
+        overflow-y: auto;
+      }
+      .chat-header {
+        padding: 10px;
+        background: #1b88d7;
+        color: white;
+        font-weight: bold;
+      }
+      .user {
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+      }
+      .user:hover {
+        background: #f0f8ff;
+      }
+      .user img {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        margin-right: 10px;
+      }
+      .chat-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .chat-messages {
+        flex: 1;
+        padding: 10px;
+        overflow-y: auto;
+      }
+      .chat-input {
+        display: flex;
+        align-items: center;
+        padding: 10px;
+        border-top: 1px solid #ddd;
+        background: #fff;
+      }
+      .chat-input input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 20px;
+        margin-right: 10px;
+      }
+      .chat-input input[type="file"] {
+        margin-right: 10px;
+      }
+      .chat-input button {
+        padding: 10px 20px;
+        border: none;
+        background: #1b88d7;
+        color: white;
+        border-radius: 20px;
+      }
+      .message {
+        margin: 10px 0;
+        max-width: 70%;
+        padding: 10px;
+        border-radius: 10px;
+        position: relative;
+      }
+      .sent {
+        background: #dcf8c6;
+        margin-left: auto;
+      }
+      .received {
+        background: #fff;
+        border: 1px solid #ccc;
+      }
+      .meta {
+        font-size: 0.75em;
+        color: #999;
+        margin-top: 5px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .reply {
+        font-size: 0.85em;
+        color: #444;
+        background: #eee;
+        padding: 5px;
+        border-radius: 6px;
+        margin-bottom: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="chat-header">Users</div>
+      <div id="userList"></div>
+    </div>
+    <div class="chat-area">
+      <div class="chat-header" id="chatWith">Chat</div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input">
+        <input type="file" id="fileInput" />
+        <input
+          type="text"
+          id="messageInput"
+          placeholder="Type your message..."
+        />
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const currentUserId = prompt("Enter your UUID:");
+      let selectedUser = null;
+      const chatBox = document.getElementById("chatMessages");
+      const ws = new WebSocket(`ws://localhost:8000/ws/${currentUserId}`);
+
+      // Load users
+      fetch(`http://localhost:8000/conversation/byuuid/${currentUserId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.data?.results) {
+            renderUserList(data.data.results);
+          }
+        });
+
+      function renderUserList(users) {
+        const container = document.getElementById("userList");
+        container.innerHTML = "";
+        users.forEach((user) => {
+          const div = document.createElement("div");
+          div.className = "user";
+          const profilePic =
+            user.profilePic === "<null>" || !user.profilePic
+              ? "https://via.placeholder.com/40"
+              : user.profilePic;
+
+          div.innerHTML = `<img src="${profilePic}" /><div>${user.name}</div>`;
+          div.onclick = () => selectUser(user);
+          container.appendChild(div);
+        });
+      }
+
+      function selectUser(user) {
+        selectedUser = user;
+        document.getElementById("chatWith").textContent =
+          "Chat with " + user.name;
+        chatBox.innerHTML = "";
+
+        fetch(
+          `http://localhost:8000/conversation/${currentUserId}/${user.uniqueUDID}`
+        )
+          .then((res) => res.json())
+          .then((data) => {
+            data.messages.forEach((msg) => {
+              const type =
+                msg.sender_id === currentUserId ? "sent" : "received";
+              appendMessage(
+                msg.body,
+                msg.time || new Date().toLocaleTimeString(),
+                type,
+                type === "sent" ? "You" : user.name,
+                msg.replied_to
+              );
+            });
+          });
+      }
+
+      function sendMessage() {
+        const input = document.getElementById("messageInput");
+        const file = document.getElementById("fileInput").files[0];
+        const message = input.value.trim();
+
+        if (!selectedUser || (!message && !file)) return;
+
+        let fileUrl = null;
+        if (file) {
+          fileUrl = URL.createObjectURL(file); // just a preview
+          appendMessage(
+            `[File] ${file.name}`,
+            new Date().toLocaleTimeString(),
+            "sent",
+            "You"
+          );
+        }
+
+        const payload = {
+          type: "message",
+          to: selectedUser.uniqueUDID,
+          message: message || `[File] ${file.name}`,
+          file_url: fileUrl,
+          reply_to: null,
+        };
+
+        ws.send(JSON.stringify(payload));
+
+        if (message) {
+          appendMessage(
+            message,
+            new Date().toLocaleTimeString(),
+            "sent",
+            "You"
+          );
+        }
+
+        input.value = "";
+        document.getElementById("fileInput").value = "";
+      }
+
+      function appendMessage(msg, time, type, senderName, reply = null) {
+        const div = document.createElement("div");
+        div.className = `message ${type}`;
+        if (reply) {
+          div.innerHTML += `<div class="reply">Reply to: ${reply}</div>`;
+        }
+        div.innerHTML += `<div>${msg}</div><div class="meta"><span>${senderName}</span><span>${time} ✓</span></div>`;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "message") {
+          if (selectedUser && data.sender_id === selectedUser.uniqueUDID) {
+            appendMessage(
+              data.message,
+              new Date().toLocaleTimeString(),
+              "received",
+              selectedUser.name,
+              data.reply_to
+            );
+          }
+        }
+      };
+    </script>
+  </body>
+</html>
