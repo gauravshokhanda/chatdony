@@ -10,6 +10,7 @@ STATUS_MAP = {
 
 # Create or get a private conversation
 async def get_or_create_conversation(uuid1, uuid2):
+    # Fetch or create a conversation between two users
     conn = get_app_db_connection()
     cursor = conn.cursor()
 
@@ -24,13 +25,16 @@ async def get_or_create_conversation(uuid1, uuid2):
     result = cursor.fetchone()
 
     if result:
+        # If conversation exists, return the existing conversation_id
         cursor.close()
         conn.close()
         return result[0]
 
+    # If no conversation exists, create a new one
     cursor.execute("INSERT INTO conversations (room_name) VALUES (%s)", (f"chat_{uuid1}_{uuid2}",))
     conversation_id = cursor.lastrowid
 
+    # Insert both users into the conversation_participants table
     cursor.execute("""
         INSERT INTO conversation_participants (conversation_id, user_id)
         VALUES (%s, %s), (%s, %s)
@@ -41,16 +45,74 @@ async def get_or_create_conversation(uuid1, uuid2):
     conn.close()
 
     return conversation_id
-
-
 # Create new message
+# Create new message
+# def create_message(data):
+#     # Insert the new message into the database
+#     conn = get_app_db_connection()
+#     cursor = conn.cursor()
+
+#     status = data.get("status", 1)
+#     if isinstance(status, str):
+#         status = STATUS_MAP.get(status.lower(), 1)
+
+#     # Handle empty message content
+#     message_content = data.get("content", "").strip()
+#     if not message_content:
+#         message_content = "No content"  # Handle empty messages
+
+#     sql = """
+#     INSERT INTO Messages (
+#         conversation_id, sender_id, receiver_id,
+#         body, replied_to, image_name, local_image_name,
+#         b_deleted, status, message_type, file_url, file_type,
+#         sent_at
+#     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+#     """
+
+#     values = (
+#         data["conversation_id"],
+#         data["sender_id"],
+#         data["receiver_id"],
+#         message_content,  # Use the validated message content
+#         data.get("replied_to"),
+#         data.get("image_name"),
+#         data.get("local_image_name"),
+#         data.get("b_deleted", 0),
+#         status,
+#         data.get("message_type", "message"),
+#         data.get("file_url"),
+#         data.get("file_type")
+#     )
+
+#     try:
+#         cursor.execute(sql, values)
+#         conn.commit()
+#         message_id = cursor.lastrowid
+#     except Exception as e:
+#         logging.error(f"Error inserting message: {e}")
+#         conn.rollback()  # Rollback in case of error
+#         message_id = None
+
+#     cursor.close()
+#     conn.close()
+
+#     return {"message_id": message_id}
+
+
 def create_message(data):
+    # Insert the new message into the database
     conn = get_app_db_connection()
     cursor = conn.cursor()
 
     status = data.get("status", 1)
     if isinstance(status, str):
         status = STATUS_MAP.get(status.lower(), 1)
+
+    # Handle empty message content
+    message_content = data.get("content", "").strip()
+    if not message_content:
+        message_content = "No content"  # Handle empty messages
 
     sql = """
     INSERT INTO Messages (
@@ -65,7 +127,7 @@ def create_message(data):
         data["conversation_id"],
         data["sender_id"],
         data["receiver_id"],
-        data.get("body", ""),  # ✅ Changed from 'message' to 'body'
+        message_content,  # Use the validated message content
         data.get("replied_to"),
         data.get("image_name"),
         data.get("local_image_name"),
@@ -76,14 +138,19 @@ def create_message(data):
         data.get("file_type")
     )
 
-    cursor.execute(sql, values)
-    conn.commit()
-    message_id = cursor.lastrowid
+    try:
+        cursor.execute(sql, values)
+        conn.commit()
+        message_id = cursor.lastrowid
+    except Exception as e:
+        logging.error(f"Error inserting message: {e}")
+        conn.rollback()  # Rollback in case of error
+        message_id = None
+
     cursor.close()
     conn.close()
 
     return {"message_id": message_id}
-
 
 # Update message status
 def update_message_status(message_id, status):

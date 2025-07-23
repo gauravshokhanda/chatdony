@@ -100,18 +100,18 @@ def websocket_app(app):
             for msg in missed:
                 try:
                     await websocket.send_json({
-                        "id": str(msg["message_id"]),
-                        "sender_id": msg["sender_id"],
-                        "receiver_id": msg["receiver_id"],
-                        "body": msg.get("content") or msg.get("message") or "",
-                        "replied_to": msg.get("reply_to_message_id"),
-                        "time": msg.get("sent_at").strftime("%I:%M %p") if msg.get("sent_at") else None,
-                        "day": msg.get("sent_at").isoweekday() if msg.get("sent_at") else None,
-                        "b_deleted": msg.get("b_deleted", False),
-                        "status": msg.get("status", 1),
-                        "image_name": msg.get("image_name"),
-                        "local_image_name": msg.get("local_image_name")
-                    })
+                    "id": str(msg["message_id"]),
+                    "sender_id": msg["sender_id"],
+                    "receiver_id": msg["receiver_id"],
+                    "body": msg.get("content") or msg.get("message") or "",  # Use 'body' if 'content' is not available
+                    "replied_to": msg.get("reply_to_message_id"),
+                    "time": msg.get("sent_at").strftime("%I:%M %p") if msg.get("sent_at") else None,
+                    "day": msg.get("sent_at").isoweekday() if msg.get("sent_at") else None,
+                    "b_deleted": msg.get("b_deleted", False),
+                    "status": msg.get("status", 1),
+                    "image_name": msg.get("image_name"),
+                    "local_image_name": msg.get("local_image_name")
+                })
                     update_message_status(msg["message_id"], "delivered")
                 except Exception as e:
                     print("Error sending missed message:", e)
@@ -203,92 +203,71 @@ def websocket_app(app):
                     })
 
 
+
+logging.basicConfig(level=logging.DEBUG)
+
 async def handle_message(data, sender_id):
     try:
         sender_id = str(sender_id)
         receiver_id = str(data.get("to"))
         msg_type = data.get("type", "message")
-        content = data.get("message", "").strip()
-        reply_to_message_id = data.get("reply_to_message_id")
+        message_content = data.get("message", "").strip()
 
-        file_url = data.get("file_url") if msg_type == "file" else None
-        file_type = data.get("file_type") if msg_type == "file" else None
+        if not message_content:
+            message_content = "No content"
 
-        # 1. Validate message content
-        if msg_type == "message" and not content:
-            await active_connections[sender_id].send_json({
-                "type": "error",
-                "message": "Message content cannot be empty."
-            })
-            return
-
-        # 2. Validate file message requirements
-        if msg_type == "file" and (not file_url or not file_type):
-            await active_connections[sender_id].send_json({
-                "type": "error",
-                "message": "Missing file_url or file_type for file message."
-            })
-            return
-
-        # 3. Get or create conversation ID
-        conversation_id = await get_or_create_conversation(sender_id, receiver_id)
+        # Get or create conversation
+        conversation_id = data.get("conversation_id")
         if not conversation_id:
-            await active_connections[sender_id].send_json({
-                "type": "error",
-                "message": "Failed to get or create conversation."
-            })
-            return
+            conversation_id = await get_or_create_conversation(sender_id, receiver_id)
 
-        # 4. Create message
+        # Prepare payload
         message_payload = {
             "conversation_id": conversation_id,
             "sender_id": sender_id,
             "receiver_id": receiver_id,
             "status": 1,
             "message_type": msg_type,
-            "content": content,
-            "file_url": file_url,
-            "file_type": file_type,
-            "reply_to_message_id": reply_to_message_id
+            "content": message_content,
+            "file_url": data.get("file_url"),
+            "file_type": data.get("file_type"),
+            "reply_to_message_id": data.get("reply_to_message_id")
         }
 
         msg_result = create_message(message_payload)
-        msg_id = msg_result["message_id"]
-        now = datetime.now()
-        message_data = {
-            "id": str(msg_id),
-            "sender_id": sender_id,
-            "receiver_id": receiver_id,
-            "body": content,
-            "replied_to": reply_to_message_id,
-            "time": now.strftime("%I:%M %p"),
-            "day": now.isoweekday(),
-            "date": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "b_deleted": False,
-            "status": 1,
-            "image_name": "image_001.jpg" if msg_type == "file" else None,
-            "local_image_name": "image_local_001.jpg" if msg_type == "file" else None
-        }
+        msg_id = msg_result.get("message_id")
+        if not msg_id:
+            raise ValueError("Message ID could not be created")
 
-        # 5. Send message to receiver only
-        if receiver_id in active_connections:
-            await active_connections[receiver_id].send_json(message_data)
-            update_message_status(msg_id, "delivered")
-
-        # 6. Confirm to sender
+        # ✅ Notify sender
         if sender_id in active_connections:
             await active_connections[sender_id].send_json({
-                "type": "status_update",
+                "type": "message",
                 "message_id": msg_id,
-                "status": "delivered" if receiver_id in active_connections else "sent"
+                "status": "sent",
+                "content": message_content
+            })
+
+        # ✅ Notify receiver (🔥 this was missing)
+        if receiver_id in active_connections:
+            await active_connections[receiver_id].send_json({
+                "type": "message",
+                "message_id": msg_id,
+                "from": sender_id,
+                "to": receiver_id,
+                "content": message_content,
+                "status": "delivered",
+                "file_url": data.get("file_url"),
+                "file_type": data.get("file_type"),
+                "reply_to_message_id": data.get("reply_to_message_id"),
             })
 
     except Exception as e:
-        print(f"🔥 Error handling message from {sender_id}: {e}")
+        logging.error(f"🔥 Error processing message: {e}")
         if sender_id in active_connections:
             await active_connections[sender_id].send_json({
                 "type": "error",
-                "message": f"Error processing message: {e}"
+                "message": f"Error processing message: {str(e)}"
             })
 
 
