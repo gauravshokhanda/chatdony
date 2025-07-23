@@ -1,4 +1,5 @@
 from fastapi import WebSocket, WebSocketDisconnect
+import logging
 from typing import Dict
 import json
 from datetime import datetime,timezone
@@ -16,6 +17,66 @@ from app.db import get_app_db_connection
 
 active_connections: Dict[str, WebSocket] = {}
 online_users = set()
+
+# User typing notification
+async def handle_typing(data, sender_id):
+    receiver_id = str(data.get("to"))
+    is_typing = data.get("is_typing", False)
+
+    if receiver_id in active_connections:
+        await active_connections[receiver_id].send_json({
+            "type": "typing",
+            "from": sender_id,
+            "is_typing": is_typing
+        })
+
+# Sending undelivered messages
+async def send_undelivered_messages(user_id, websocket):
+    undelivered_messages = get_undelivered_messages(user_id)
+    for message in undelivered_messages:
+        await websocket.send_json({
+            "id": str(message["message_id"]),
+            "sender_id": message["sender_id"],
+            "receiver_id": message["receiver_id"],
+            "body": message.get("body"),
+            "status": "sent"
+        })
+        update_message_status(message["message_id"], "delivered")
+
+# Notify user status to all connected users
+async def send_user_status_update(user_id, is_online):
+    for uid, ws in active_connections.items():
+        if uid != user_id:
+            await ws.send_json({
+                "type": "user_status",
+                "user_id": user_id,
+                "is_online": is_online
+            })
+
+async def handle_delete(data, sender_id):
+    message_id = data.get("message_id")
+    delete_message(message_id)
+
+    # Notify all connected users about the message deletion
+    for user_id, ws in active_connections.items():
+        await ws.send_json({
+            "type": "message_deleted",
+            "message_id": message_id
+        })
+    # Delete message function
+def delete_message(message_id):
+    conn = get_app_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE Messages SET b_deleted = 1 WHERE id = %s", (message_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    # Mark message as seen
+def mark_message_seen(message_id):
+    update_message_status(message_id, "seen")
+
+
 
 def websocket_app(app):
     @app.websocket("/ws/{user_id}")
@@ -229,3 +290,6 @@ async def handle_message(data, sender_id):
                 "type": "error",
                 "message": f"Error processing message: {e}"
             })
+
+
+

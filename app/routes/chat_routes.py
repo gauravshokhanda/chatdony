@@ -96,9 +96,8 @@ def get_conversation_by_uuid(
         SELECT id, sender_id, receiver_id, body
         FROM Messages
         WHERE 
-            (sender_id = %s AND receiver_id = %s)
-            OR 
-            (sender_id = %s AND receiver_id = %s)
+            ((sender_id = %s AND receiver_id = %s) OR (sender_id = %s AND receiver_id = %s))
+            AND body != ''
         ORDER BY id ASC
         LIMIT %s OFFSET %s
     """
@@ -132,3 +131,4 @@ def get_conversation_by_uuid(
         "limit": limit,
         "messages": formatted
     }
+
