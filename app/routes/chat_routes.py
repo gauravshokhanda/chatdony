@@ -117,13 +117,13 @@ def get_conversation_by_uuid(
             "receiver_id": row["receiver_id"],
             "body": row["body"],
             "replied_to": row.get("replied_to"),
-            "time": sent_at.strftime("%I:%M %p"),
+            "time": sent_at.strftime("%H:%M"),
             "day": sent_at.isoweekday(),
             "b_deleted": bool(row.get("b_deleted", False)),
             "status": row.get("status", 1),
             "image_name": row.get("image_name", ""),
             "local_image_name": row.get("local_image_name", ""),
-            "date": sent_at.isoformat() + "Z"
+            "date": sent_at.strftime("%Y-%m-%d %H:%M:0")
         })
 
 
