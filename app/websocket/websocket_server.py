@@ -105,7 +105,7 @@ def websocket_app(app):
                     "receiver_id": msg["receiver_id"],
                     "body": msg.get("content") or msg.get("message") or "",  # Use 'body' if 'content' is not available
                     "replied_to": msg.get("reply_to_message_id"),
-                    "time": msg.get("sent_at").strftime("%I:%M %p") if msg.get("sent_at") else None,
+                    "time": msg.get("sent_at").strftime("%H:%M") if msg.get("sent_at") else None,
                     "day": msg.get("sent_at").isoweekday() if msg.get("sent_at") else None,
                     "b_deleted": msg.get("b_deleted", False),
                     "status": msg.get("status", 1),
@@ -264,7 +264,7 @@ async def handle_message(data, sender_id):
                 "status": 1,
                 "image_name": data.get("image_name"),
                 "local_image_name": data.get("local_image_name"),
-                "date": sent_at.isoformat()
+                "date": sent_at.strftime("%Y-%m-%d %H:%M:0")
             })
 
     except Exception as e:
