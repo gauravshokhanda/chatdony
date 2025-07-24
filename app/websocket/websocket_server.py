@@ -250,16 +250,21 @@ async def handle_message(data, sender_id):
 
         # ✅ Notify receiver (🔥 this was missing)
         if receiver_id in active_connections:
+            sent_at = datetime.utcnow()  # or fetch from DB if needed
             await active_connections[receiver_id].send_json({
                 "type": "message",
-                "message_id": msg_id,
-                "from": sender_id,
-                "to": receiver_id,
-                "content": message_content,
-                "status": "delivered",
-                "file_url": data.get("file_url"),
-                "file_type": data.get("file_type"),
-                "reply_to_message_id": data.get("reply_to_message_id"),
+                "id": str(msg_id),
+                "sender_id": sender_id,
+                "receiver_id": receiver_id,
+                "body": message_content,
+                "replied_to": data.get("reply_to_message_id"),
+                "time": sent_at.strftime("%I:%M %p"),
+                "day": sent_at.weekday(),
+                "b_deleted": False,
+                "status": 1,
+                "image_name": data.get("image_name"),
+                "local_image_name": data.get("local_image_name"),
+                "date": sent_at.isoformat()
             })
 
     except Exception as e:

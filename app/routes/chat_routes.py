@@ -87,40 +87,24 @@ def get_conversation_by_uuid(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
 ):
-    conn = get_app_db_connection()
+    conn = get_app_db_connection()  # telehotwire DB
     cursor = conn.cursor(dictionary=True)
 
     offset = (page - 1) * limit
 
-    # Fuzzy match support using last 8–9 characters
-    uuid1_suffix = uuid1[-9:] if len(uuid1) > 8 else uuid1
-    uuid2_suffix = uuid2[-9:] if len(uuid2) > 8 else uuid2
-
-    like_uuid1 = f"%{uuid1_suffix}"
-    like_uuid2 = f"%{uuid2_suffix}"
-
     query = """
-        SELECT 
-            id, sender_id, receiver_id, body,
-            replied_to, sent_at, b_deleted, status,
-            image_name, local_image_name
+       SELECT 
+    id, sender_id, receiver_id, body,
+    replied_to, sent_at, b_deleted, status,
+    image_name, local_image_name
         FROM Messages
         WHERE 
-            (
-                (sender_id LIKE %s AND receiver_id LIKE %s)
-                OR
-                (sender_id LIKE %s AND receiver_id LIKE %s)
-            )
+            ((sender_id = %s AND receiver_id = %s) OR (sender_id = %s AND receiver_id = %s))
             AND body != ''
         ORDER BY id ASC
         LIMIT %s OFFSET %s
     """
-
-    cursor.execute(query, (
-        like_uuid1, like_uuid2,
-        like_uuid2, like_uuid1,
-        limit, offset
-    ))
+    cursor.execute(query, (uuid1, uuid2, uuid2, uuid1, limit, offset))
     rows = cursor.fetchall()
 
     formatted = []
@@ -141,6 +125,7 @@ def get_conversation_by_uuid(
             "local_image_name": row.get("local_image_name", ""),
             "date": sent_at.isoformat() + "Z"
         })
+
 
     cursor.close()
     conn.close()
